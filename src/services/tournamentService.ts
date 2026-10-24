@@ -1,33 +1,7 @@
 import { supabase } from "@/lib/supabase";
+import { Match, Team, Tournament, TournamentDetails } from "@/types";
 
-export interface Tournament {
-  id: string;
-  created_at: string;
-  title: string;
-  created_by: string;
-  status: "pending" | "in_progress" | "completed";
-  qr_code_key: string;
-}
-
-export interface Team {
-  id: string;
-  tournament_id: string;
-  name: string;
-  player1_id: string;
-  player2_id: string;
-}
-
-export interface Match {
-  id: string;
-  tournament_id: string;
-  round: number;
-  team_a_id: string;
-  team_b_id: string;
-  winner_team_id?: string;
-  score_a: number;
-  score_b: number;
-  status: "pending" | "in_progress" | "finished";
-}
+export type { Match, Team, Tournament, TournamentDetails };
 
 export const TournamentService = {
   // 1. Crear un torneo nuevo
@@ -36,7 +10,7 @@ export const TournamentService = {
     creatorId: string,
   ): Promise<Tournament | null> => {
     try {
-      // Generar un código QR único
+      // Generar un código QR único y fácil de leer
       const qrCodeKey = `TRUCO-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
       const { data, error } = await supabase
@@ -69,12 +43,12 @@ export const TournamentService = {
         .from("tournaments")
         .select("*")
         .eq("id", tournamentId)
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
-      return data as Tournament;
+      return (data as Tournament) ?? null;
     } catch (error) {
-      console.error("Error obteniendo torneo:", error);
+      console.error("Error obteniendo torneo por ID:", error);
       return null;
     }
   },
@@ -85,18 +59,72 @@ export const TournamentService = {
       const { data, error } = await supabase
         .from("tournaments")
         .select("*")
-        .eq("qr_code_key", qrCodeKey.trim())
-        .single();
+        .eq("qr_code_key", qrCodeKey.trim().toUpperCase())
+        .maybeSingle();
 
       if (error) throw error;
-      return data as Tournament;
+      return (data as Tournament) ?? null;
     } catch (error) {
       console.error("Error buscando torneo por QR:", error);
       return null;
     }
   },
 
-  // 4. Sorteo Aleatorio 🎲: Armar parejas (2 vs 2)
+  // 4. Obtener todos los torneos creados por un jugador
+  getMyTournaments: async (userId: string): Promise<Tournament[]> => {
+    try {
+      const { data, error } = await supabase
+        .from("tournaments")
+        .select("*")
+        .eq("created_by", userId)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      return (data as Tournament[]) || [];
+    } catch (error) {
+      console.error("Error obteniendo torneos del usuario:", error);
+      return [];
+    }
+  },
+
+  // 5. Obtener torneo con sus parejas y partidos (detalle completo)
+  getTournamentDetails: async (
+    idOrQr: string,
+  ): Promise<TournamentDetails | null> => {
+    try {
+      // Buscar primero por ID; si no existe, buscar por código QR
+      let tournament = await TournamentService.getTournamentById(idOrQr);
+      if (!tournament) {
+        tournament = await TournamentService.getTournamentByQR(idOrQr);
+      }
+
+      if (!tournament) return null;
+
+      // Obtener parejas asociadas
+      const { data: teams } = await supabase
+        .from("teams")
+        .select("*")
+        .eq("tournament_id", tournament.id);
+
+      // Obtener partidos asociados
+      const { data: matches } = await supabase
+        .from("matches")
+        .select("*")
+        .eq("tournament_id", tournament.id)
+        .order("round", { ascending: true });
+
+      return {
+        tournament,
+        teams: (teams as Team[]) || [],
+        matches: (matches as Match[]) || [],
+      };
+    } catch (error) {
+      console.error("Error obteniendo detalle completo del torneo:", error);
+      return null;
+    }
+  },
+
+  // 6. Sorteo Aleatorio 🎲: Armar parejas (2 vs 2)
   generateRandomTeams: async (
     tournamentId: string,
     playerIds: string[],
@@ -143,7 +171,7 @@ export const TournamentService = {
     }
   },
 
-  // 5. Generar Brackets/Cruces Aleatorios para la Ronda 1 🏆
+  // 7. Generar Brackets/Cruces Aleatorios para la Ronda 1 🏆
   generateBracketMatches: async (
     tournamentId: string,
     teams: Team[],
@@ -176,7 +204,7 @@ export const TournamentService = {
           winner_team_id: teamB ? null : shuffledTeams[i].id,
           score_a: 0,
           score_b: 0,
-          status: teamB ? "pending" : "finished",
+          status: teamB ? ("pending" as const) : ("finished" as const),
         });
       }
 
@@ -199,7 +227,7 @@ export const TournamentService = {
     }
   },
 
-  // 6. Cargar o actualizar resultado de una partida
+  // 8. Cargar o actualizar resultado de una partida
   updateMatchScore: async (
     matchId: string,
     scoreA: number,

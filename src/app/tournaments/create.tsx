@@ -1,16 +1,16 @@
+import WoodButton from "@/components/Button";
 import { IMAGES } from "@/constants/images";
-import { supabase } from "@/lib/supabase";
+import { PlayerService } from "@/services/playerService";
 import { TournamentService } from "@/services/tournamentService";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   ImageBackground,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from "react-native";
 
@@ -28,34 +28,21 @@ export default function CreateTournamentScreen() {
     setLoading(true);
 
     try {
-      // 1. Obtener el id del creador (desde Auth o desde la tabla players)
-      const { data: authData } = await supabase.auth.getUser();
-      let creatorId = authData?.user?.id;
+      const profile = await PlayerService.getLocalProfile();
 
-      if (!creatorId) {
-        const { data: players } = await supabase
-          .from("players")
-          .select("id")
-          .limit(1);
-
-        if (players && players.length > 0) {
-          creatorId = players[0].id;
-        }
-      }
-
-      if (!creatorId) {
+      if (!profile?.id) {
         Alert.alert(
-          "Error",
-          "No se encontró un usuario/jugador para asociar al torneo.",
+          "Error de Sesión",
+          "No encontramos tu perfil de jugador. Por favor volvé a iniciar sesión.",
         );
         setLoading(false);
+        router.replace("/login");
         return;
       }
 
-      // 2. Crear el torneo en la BD
       const tournament = await TournamentService.createTournament(
         name,
-        creatorId,
+        profile.id,
       );
       setLoading(false);
 
@@ -68,7 +55,7 @@ export default function CreateTournamentScreen() {
     } catch (err) {
       setLoading(false);
       console.error(err);
-      Alert.alert("Error", "Ocurrió un error inesperado.");
+      Alert.alert("Error", "Ocurrió un error inesperado al crear el torneo.");
     }
   };
 
@@ -79,47 +66,55 @@ export default function CreateTournamentScreen() {
       resizeMode="cover"
     >
       <View style={styles.overlay}>
-        {/* Banner Pergamino */}
-        <ImageBackground
-          source={IMAGES.bannerScroll}
-          style={styles.bannerContainer}
-          resizeMode="contain"
-        >
-          <Text style={styles.bannerTitle}>CREAR TORNEO</Text>
-        </ImageBackground>
-
-        {/* Hoja de Libreta */}
-        <ImageBackground
-          source={IMAGES.paperSheet1}
-          style={styles.paperSheet}
-          imageStyle={styles.paperImageStyle}
-          resizeMode="stretch"
-        >
-          <Text style={styles.sheetTitle}>Detalles del Torneo</Text>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>NOMBRE DEL TORNEO</Text>
-            <TextInput
-              style={styles.paperInput}
-              placeholder="Ej: Truco de los Viernes"
-              placeholderTextColor="#7A6855"
-              value={name}
-              onChangeText={setName}
-            />
+        <View style={styles.responsiveContent}>
+          {/* Banner Pergamino - GRANDE Y NÍTIDO */}
+          <View style={styles.bannerContainer}>
+            <ImageBackground
+              source={IMAGES.bannerScroll}
+              style={styles.bannerImage}
+              resizeMode="contain"
+            >
+              <Text style={styles.bannerTitle}>CREAR TORNEO</Text>
+            </ImageBackground>
           </View>
 
-          <TouchableOpacity
-            style={styles.woodButton}
-            onPress={handleCreate}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#FFF" />
-            ) : (
-              <Text style={styles.woodButtonText}>Generar Torneo 🎴</Text>
-            )}
-          </TouchableOpacity>
-        </ImageBackground>
+          {/* Hoja de Libreta - SE VE ENTERA (CONTAIN) */}
+          <View style={styles.paperContainer}>
+            <ImageBackground
+              source={IMAGES.paperSheet1}
+              style={styles.paperBackground}
+              resizeMode="contain"
+            >
+              <View style={styles.paperContent}>
+                <Text style={styles.sheetTitle}>Detalles del Torneo</Text>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>NOMBRE DEL TORNEO</Text>
+                  <TextInput
+                    style={styles.paperInput}
+                    placeholder="Ej: Truco de los Viernes"
+                    placeholderTextColor="#7A6855"
+                    value={name}
+                    onChangeText={setName}
+                  />
+                </View>
+
+                <WoodButton
+                  title="Generar Torneo 🎴"
+                  onPress={handleCreate}
+                  loading={loading}
+                />
+
+                <WoodButton
+                  title="Volver"
+                  variant="secondary"
+                  onPress={() => router.back()}
+                  disabled={loading}
+                />
+              </View>
+            </ImageBackground>
+          </View>
+        </View>
       </View>
     </ImageBackground>
   );
@@ -130,62 +125,84 @@ const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.25)",
-    padding: 20,
     justifyContent: "center",
     alignItems: "center",
+  },
+  responsiveContent: {
+    width: "100%",
+    maxWidth: 480,
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingVertical: Platform.OS === "web" ? 24 : 50,
+    alignItems: "center",
+    justifyContent: "center",
   },
   bannerContainer: {
-    width: 300,
-    height: 85,
+    width: "100%",
+    maxWidth: 420,
+    aspectRatio: 1860 / 845,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: 12,
+  },
+  bannerImage: {
+    width: "100%",
+    height: "100%",
+    justifyContent: "center",
+    alignItems: "center",
   },
   bannerTitle: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: "900",
     color: "#2D1A0E",
-    letterSpacing: 1.5,
+    letterSpacing: 2,
+    textShadowColor: "rgba(255, 255, 255, 0.6)",
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 1,
   },
-  paperSheet: {
+  paperContainer: {
     width: "100%",
-    maxWidth: 360,
-    paddingVertical: 35,
-    paddingHorizontal: 25,
+    maxWidth: 470,
+    aspectRatio: 1448 / 1086,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  paperImageStyle: { borderRadius: 12 },
+  paperBackground: {
+    width: "100%",
+    height: "100%",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  paperContent: {
+    width: "86%",
+    height: "76%",
+    marginTop: "4%",
+    justifyContent: "space-evenly",
+  },
   sheetTitle: {
     fontSize: 20,
     fontWeight: "bold",
     color: "#2D1A0E",
-    marginBottom: 20,
+    marginBottom: 6,
     textAlign: "center",
   },
-  inputGroup: { marginBottom: 16 },
+  inputGroup: { marginBottom: 8 },
   label: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "bold",
     color: "#4A3319",
-    marginBottom: 6,
+    marginBottom: 4,
+    letterSpacing: 1,
   },
   paperInput: {
-    backgroundColor: "rgba(255, 255, 255, 0.65)",
+    backgroundColor: "rgba(255, 255, 255, 0.75)",
     borderWidth: 1.5,
     borderColor: "#B0A08A",
     borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    fontSize: 15,
     color: "#2D1A0E",
     fontWeight: "600",
   },
-  woodButton: {
-    backgroundColor: "#2D5A27",
-    borderColor: "#193817",
-    borderWidth: 2,
-    borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: "center",
-    marginTop: 15,
-  },
-  woodButtonText: { color: "#FFF", fontSize: 18, fontWeight: "bold" },
 });

@@ -1,12 +1,8 @@
 import { supabase } from "@/lib/supabase";
+import { PlayerProfile } from "@/types";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-export interface PlayerProfile {
-  id: string;
-  name: string;
-  alias: string;
-  avatar_url?: string;
-}
+export type { PlayerProfile };
 
 const PLAYER_STORAGE_KEY = "@mesatruco_user_profile";
 
@@ -40,15 +36,19 @@ export const PlayerService = {
       const cleanAlias = alias.trim().toLowerCase();
       const cleanName = name.trim();
 
-      // Buscar si el alias ya existe en Supabase
+      // Buscar si el alias ya existe en Supabase usando maybeSingle (evita excepciones si no existe)
       const { data: existingPlayer, error: searchError } = await supabase
         .from("players")
         .select("*")
         .eq("alias", cleanAlias)
-        .single();
+        .maybeSingle();
+
+      if (searchError) {
+        console.warn("Advertencia al buscar jugador:", searchError.message);
+      }
 
       if (existingPlayer) {
-        // Si ya existe, usaremos ese perfil
+        // Si ya existe, usamos ese perfil
         const profile: PlayerProfile = {
           id: existingPlayer.id,
           name: existingPlayer.name,
